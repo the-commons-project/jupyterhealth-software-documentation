@@ -318,3 +318,15 @@ GET /FHIR/R5/QuestionnaireResponse/2d50b34d-b33c-4f47-a5e8-595764d51f53
 ```
 
 All reads return a FHIR `searchset` Bundle (or a single resource for an ID lookup).
+
+## Browsing FHIR resources in the Admin UI
+
+The JHE Admin UI (the SPA at `/clients/jhe-admin/...`) has a **FHIR Resources** tab for inspecting stored FHIR data without writing queries by hand. This is where data pulled in by the [MyChart integration](../mychart-integration.md) (and any other aux resource) shows up after import.
+
+How it works ([`renderFhir` in `client-jhe-admin.js`](https://github.com/jupyterhealth/jupyterhealth-exchange/blob/main/core/static/clients/jhe-admin/js/client-jhe-admin.js)):
+
+1. Pick an **Organization**, optionally a **Study**, and a **Resource type** (the dropdown lists every supported FHIR type from server settings — both mapped types like `Observation`/`Patient` and aux-only types like `QuestionnaireResponse`).
+1. The tab runs a normal FHIR search: `GET /FHIR/R5/<resource>?patient.organization=<org>` (plus `patient._has:Group:member:_id=<study>` when a study is chosen), paginated with `_page` / `_count`.
+1. Each result row shows the resource **id**, the **patient name**, and the **raw FHIR JSON**. The patient name is read from the `.../patient-full-name` JHE provenance extension the server stamps on every stored aux resource (see [FHIR Engine](./fhir-engine.md#auxiliary-resources-fhirsource--the-source-header)), so even an opaque aux body shows who it belongs to.
+
+Because the tab runs the same access-scoped FHIR search as the API, a practitioner only ever sees resources for patients in their own organizations.

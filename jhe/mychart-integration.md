@@ -40,7 +40,16 @@ Patient browser ──▶ /clients/mychart/?code=<invitation>   (connect.html)
               (header X-JHE-FHIR-Source-ID)         "Labs: N records"
 ```
 
-The Epic patient id is stored as a `PatientIdentifier` (`system` = the Epic `iss`, `value` = the Epic patient id). The pulled Observations are non-OMH FHIR resources, so they are stored as [auxiliary FHIR resources](./fhir/fhir-api.md) (`FhirAuxResource`), linked to a `FhirSource` the patient registers on the fly. Re-running attaches new aux rows.
+The Epic patient id is stored as a `PatientIdentifier` (`system` = the Epic `iss`, `value` = the Epic patient id). The pulled Observations are **LOINC-coded lab** resources, not OMH-coded — so by the [FHIR engine routing rule](./fhir/fhir-engine.md#routing) (only `code` system `https://w3id.org/openmhealth` writes the native `Observation` model; everything else falls through) they are stored as [auxiliary FHIR resources](./fhir/fhir-api.md#working-with-other-resources) (`FhirAuxResource`), linked to a `FhirSource` the patient registers on the fly. Re-running attaches new aux rows.
+
+### Two layers of consent
+
+This flow has **two** consent steps, in two different systems:
+
+- **JHE consent** — the practitioner invites the patient to a study via the MyChart client; redeeming the invitation is the patient's grant to share with JHE. This is the standard JHE [client / invitation flow](./client-flow.md), and the resulting study scope consents are visible through the [consents API](./admin-api.md#patient-consents).
+- **Epic consent** — on the MyChart login screen the patient separately authorizes Epic to release their data to the JHE SMART app (the scopes in `aux_data.scopes`). This grant lives on the Epic side, not in JHE.
+
+Both must succeed for any data to move.
 
 ## Configuration
 
@@ -131,15 +140,15 @@ Stop the test server with `docker rm -f jhe-web-8010`.
 
 ## End-to-End Test
 
-| Step             | Command / Action                                                                                                                                                                                | Expected                                                                      |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| 1. Unit tests    | `python -m pytest tests/backend/test_mychart.py`                                                                                                                                                | 7 passed                                                                      |
-| 2. Practitioner  | Log in at `http://localhost:8010/` as `manager_mary@example.com` / `Jhe1234!`, open patient **Peter** (`ll_patient_peter@example.com`), **Generate Invitation Link** for the **MyChart** client | Link points at `http://localhost:8010/clients/mychart/?code=...`              |
-| 3. Connect       | Open the invitation link in a new tab                                                                                                                                                           | "Redeeming invitation..." → "JHE access token received" → redirect to MyChart |
-| 4. MyChart login | Log in as an Epic sandbox MyChart test patient (e.g. Camila Lopez `fhircamila`)                                                                                                                 | Epic consent screen, then return to `/clients/mychart/callback`               |
-| 5. Import        | (automatic on the callback page)                                                                                                                                                                | Shows the MyChart patient id, "Stored ... in JHE", and **"Labs: N records"**  |
-| 6. Identifier    | JHE Admin UI → Peter                                                                                                                                                                            | A `PatientIdentifier` with `system` = Epic `iss`, `value` = Epic patient id   |
-| 7. Data          | JHE Admin UI → Peter's observations (or query `FhirAuxResource` for `Observation`)                                                                                                              | N Observation aux rows linked to Peter's `FhirSource`                         |
+| Step             | Command / Action                                                                                                                                                                                | Expected                                                                       |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| 1. Unit tests    | `python -m pytest tests/backend/test_mychart.py`                                                                                                                                                | 7 passed                                                                       |
+| 2. Practitioner  | Log in at `http://localhost:8010/` as `manager_mary@example.com` / `Jhe1234!`, open patient **Peter** (`ll_patient_peter@example.com`), **Generate Invitation Link** for the **MyChart** client | Link points at `http://localhost:8010/clients/mychart/?code=...`               |
+| 3. Connect       | Open the invitation link in a new tab                                                                                                                                                           | "Redeeming invitation..." → "JHE access token received" → redirect to MyChart  |
+| 4. MyChart login | Log in as an Epic sandbox MyChart test patient (e.g. Camila Lopez `fhircamila`)                                                                                                                 | Epic consent screen, then return to `/clients/mychart/callback`                |
+| 5. Import        | (automatic on the callback page)                                                                                                                                                                | Shows the MyChart patient id, "Stored ... in JHE", and **"Labs: N records"**   |
+| 6. Identifier    | JHE Admin UI → Peter                                                                                                                                                                            | A `PatientIdentifier` with `system` = Epic `iss`, `value` = Epic patient id    |
+| 7. Data          | JHE Admin UI → **FHIR Resources** tab → select Peter's Organization and Resource = `Observation` (see [Browsing FHIR resources](./fhir/fhir-api.md#browsing-fhir-resources-in-the-admin-ui))    | N `Observation` aux rows for Peter, each a LOINC-coded lab, with raw FHIR JSON |
 
 The MyChart patient id is whatever the Epic sandbox account maps to; it is stored on the JHE patient (Peter) you invited, regardless of name.
 
